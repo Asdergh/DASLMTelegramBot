@@ -199,5 +199,15 @@ class ConformerEncoder(Module):
     def __call__(self, inputs: th.Tensor) -> th.Tensor:
         return self._net(inputs)
 
+    def predict(self, inputs: th.Tensor) -> th.Tensor:
+        pass
+    
+    def save_params(self, filename: str) -> None:
+        pass
+
+    def save_to_file(self, filename: str) -> None:
+        pass
+    
+
 
 
