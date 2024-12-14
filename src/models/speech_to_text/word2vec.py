@@ -1,8 +1,55 @@
+# TODO write word2vec trainer
+# TODO end up with TextSet cll
+
 import torch as th
 import random as rd
+import tqdm as tq
 
 from io import TextIOWrapper
-from torch.utils.data import Dataset
+from torch.nn import (
+    LSTM,
+    Embedding,
+    Linear,
+    Module,
+    Softmax
+)
+from torch.utils.data import (
+    Dataset,
+    DataLoader
+)
+
+
+class Word2VecRec(Module):
+
+    def __init__(self, tokens_n: int, embedding_dim: int) -> None:
+
+        super().__init__()
+
+        self.embedding = Embedding(num_embeddings=tokens_n, embedding_dim=embedding_dim)
+        self.lstm = LSTM(
+            input_size=embedding_dim,
+            hidden_size=128,
+            num_layers=3
+        )
+        self.linear = Linear(in_features=128, out_features=embedding_dim)
+        
+    def __call__(self, inputs: th.Tensor) -> th.Tensor:
+
+        em = self.embedding(inputs)
+        lstm = self.lstm(em)
+        projection = self.linear(lstm)
+
+        return Softmax(dim=1)(projection)
+
+    def save_weights(self, filename: str) -> None:
+        th.save(self.state_dict, filename)
+    
+    def load_weights(self, filename: str) -> None:
+        self.load_state_dict(th.load(filename, weights_only=True))
+
+    def predict(self, inputs: th.Tensor.long) -> th.Tensor:
+        return self.linear(inputs)
+
 
 
 class TextSet(Dataset):
@@ -117,3 +164,41 @@ class TextSet(Dataset):
             " ".join(self.idx_to_word[idx] for idx in sample)
             for sample in inputs.tolist()
         ]
+         
+
+        
+class Word2VecRnnTrainer:
+
+    def __init__(
+        self,
+        epochs: int,
+        batch_size: int,
+        data_source: str | th.utils.data.Dataset 
+    ) -> None:
+        
+        super().__init__()
+
+
+if __name__ == "__main__":
+    
+    txt_file = open("C:\\Users\\1\\Desktop\\res_mat.txt", "r")
+    test_set = TextSet(data_source=txt_file, sequences_lenght=45)
+    test_loader = DataLoader(dataset=test_set, batch_size=32)
+
+    # print(len(test_loader))
+    samples_txt = []
+    samples_labels = []
+    # print(len(test_loader))
+    for sample in test_loader:
+        samples_txt.append(sample[0])
+        samples_labels.append(sample[1])
+    
+    res_txt = th.cat(samples_txt, dim=0)
+    res_labels = th.cat(samples_labels, dim=0)
+    print(res_txt.size(), res_labels.size())
+    txt_from_tensor = test_set.sequences_to_texts(res_txt)
+    for string in txt_from_tensor:
+        print(string)
+    # print(samples)
+    # res = th.Tensor(samples)
+    # print(samples.size())
