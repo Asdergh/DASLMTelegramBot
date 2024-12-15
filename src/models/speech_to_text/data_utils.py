@@ -1,10 +1,15 @@
 import torch as th
 import random as rd
+import tqdm as tq
 import os
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from io import TextIOWrapper
-from torch.utils.data import Dataset
+from torch.utils.data import (
+    Dataset, 
+    DataLoader
+)
 from torchaudio import load
 from torchaudio.transforms import MelSpectrogram
 
@@ -133,12 +138,16 @@ class S2TDataset(Dataset):
         data_dir: str,
         transforms: th.nn.Module,
         replace_order: dict = None,
-        sequences_lenght: int = 20
+        sequences_lenght: int = 20,
+        mel_time_range: int = 300
     ) -> None:
 
         super().__init__()
+        self.tf = transforms
         self.seq_len = sequences_lenght
         self.ro = replace_order
+        self.mel_time_range = mel_time_range
+
         if self.ro is None:
             self.ro = {
                 ",": " ",
@@ -147,7 +156,7 @@ class S2TDataset(Dataset):
                 "\n": "@"
             }
 
-        self.mels, self.texts = [], []
+        self.track_ids, self.texts = [], []
         self.word_to_idx = {}
         self.idx_to_word = {}
 
@@ -156,42 +165,32 @@ class S2TDataset(Dataset):
             for batch in os.listdir(split_path):
                 
                 batch_path = os.path.join(split_path, batch)
-                annots_path = f"{split}-{batch}.trans.txt"
-                print(os.path.join(batch_path, annots_path))
-                self._tabulate_annots(os.path.join(batch_path, annots_path))
+                annots_path = os.path.join(batch_path, f"{split}-{batch}.trans.txt")
+                print(annots_path)
 
-                tmp_df = pd.read_csv(annots_path, sep="\t")
-                txt_samples, track_ids = self._txt_mel_aug(data_frame=tmp_df)
+                self._tabulate_annots(annots_path)
+                txt_samples, track_ids = self._txt_mel_aug(filename=annots_path)
                 
                 self.texts += txt_samples
-                self.mels += [transforms(load(os.path.join(batch_path, f"{track_id}.flac")) 
-                                  for track_id in track_ids)]
-    
-
-    def __len__(self) -> int:
-        return len(self.mels)
-    
-    def __getitem__(self, idx) -> tuple[th.Tensor]:
-        
-        txt_sample = th.Tensor([self.word_to_idx[token] for token in self.texts[idx]])
-        return (
-            self.mels[idx],
-            txt_sample
-        )
-        
-                
-    def _txt_mel_aug(self, data_frame) -> list[str]:
+                self.track_ids += [os.path.join(batch_path, f"{track_id}.flac") 
+                                  for track_id in track_ids]
 
 
-        texts = data_frame["TEXT_CONTENT"].to_list()
-        tracks = data_frame["TRACK_IDS"].to_list()
-        out_txt, out_mels = []
+    def _txt_mel_aug(self, filename: str) -> list[str]:
+
+
+        with open(filename, "r") as txt_annots:
+            data = txt_annots.readlines()
+
+        texts = [row.split("\t")[1] for row in data]
+        tracks = [row.split("\t")[0] for row in data]
+        out_txt, out_mels = [], []
 
         for (string, track_id) in zip(texts, tracks):
             
             if len(string.split()) >= self.seq_len:
 
-                for (rep_sim, new_sim) in enumerate(self.ro):
+                for (rep_sim, new_sim) in self.ro.items():
                     string.replace(rep_sim, new_sim)
 
                 out_mels.append(track_id)
@@ -204,14 +203,10 @@ class S2TDataset(Dataset):
         
         return (out_txt, out_mels)
 
-            
-
-
-            
+        
     def _tabulate_annots(self, filename: str, outfile: str = None) -> None:
 
         str_buffer = []
-        print(filename)
         with open(filename, "r") as txt_file:
 
             text = txt_file.readlines()
@@ -223,13 +218,66 @@ class S2TDataset(Dataset):
 
                 str_buffer += [track_idx + "\t" + txt_content.lower(), ]
         
-        str_buffer = "TRACK_IDS\tTEXT_CONTENT\n" + "\n".join(string for string in str_buffer)
+        start_token = "TRACK_IDS\tTEXT_CONTENT\n"
+        if str_buffer[0] == start_token.lower():
+            start_token = ""
+
+        str_buffer =  start_token + "\n".join(string for string in str_buffer)
         out_file = filename
         if outfile is not None:
             out_file = outfile
 
         with open(out_file, "w") as txt_file:
             txt_file.write(str_buffer)
+    
+    
+    def _tensor_to_str(self, input: th.Tensor.long) -> str:
+        return " ".join(
+            self.idx_to_word[idx] 
+            for idx in input.tolist()
+        )
+
+    def sequences_to_text(self, inputs: th.Tensor) -> str | list[str]:
+
+        if len(inputs.size()) == 2:
+            texts = []
+            for sample in inputs:
+                texts.append(self._tensor_to_str(sample))
+            return texts
+        
+        return self._tensor_to_str(inputs)
+
+
+            
+    def __len__(self) -> int:
+        return len(self.track_ids)
+    
+
+    def __getitem__(self, idx) -> tuple[
+        th.Tensor,
+        th.Tensor.long,
+        th.tensor
+    ]:
+        
+        wave, _ = load(self.track_ids[idx])
+        mel_sample = self.tf(wave)
+
+        txt_sample = self.texts[idx].split()
+        label = txt_sample[-1]
+        if idx < len(self.texts) - 1:
+            label = self.texts[idx + 1].split()[0]
+        
+        if len(txt_sample) > self.seq_len:
+
+            rand_idx = rd.randint(0, len(txt_sample) - self.seq_len)
+            label = txt_sample[rand_idx + self.seq_len - 1]
+            txt_sample = txt_sample[rand_idx: rand_idx + self.seq_len]
+
+        return (
+            mel_sample[:, :, :self.mel_time_range],
+            th.Tensor([self.word_to_idx[token] for token in txt_sample]),
+            th.tensor(self.word_to_idx[label])
+        )
                 
 
 
@@ -239,3 +287,24 @@ if __name__ == "__main__":
     transforms = MelSpectrogram()
     data_dir = "C:\\Users\\1\\Desktop\\dev-clean\\LibriSpeech\\dev-clean"
     train_set = S2TDataset(data_dir=data_dir, transforms=transforms)
+    train_loader = DataLoader(dataset=train_set, batch_size=32, shuffle=True)
+    
+    test_mels, test_tokens = [], []
+    for i, (mel, tokens, _) in enumerate(tq.tqdm(train_loader, colour="GREEN")):
+        
+        test_mels.append(mel), test_tokens.append(tokens)
+        print(mel.size(), tokens.size())
+
+    
+    test_mels = th.cat(test_mels, dim=0)
+    for (sample, sample_tf) in zip(train_set.sequences_to_text(test_tokens[:][0]), test_tokens[:][0]):
+        print(sample, sample_tf.tolist(), sep="\t\t")
+    
+    plt.style.use("dark_background")
+    _, axis = plt.subplots(nrows=3)
+    for i in range(axis.shape[0]):
+
+        idx = rd.randint(0, 100)
+        axis[i].imshow(test_mels[idx][0], cmap="jet")
+    
+    plt.show()
