@@ -33,7 +33,7 @@ class SeqDecoder(Module):
 
         super().__init__()
         self._rnn_base = Sequential(
-            Embedding(num_embeddings=tokens_n, embedding_dim=embedding_dim),
+            Embedding(num_embeddings=tokens_n + 1, embedding_dim=embedding_dim),
             LSTM(
                 input_size=embedding_dim,
                 hidden_size=128,
@@ -43,7 +43,7 @@ class SeqDecoder(Module):
 
         self._linear_base = Sequential(
             Linear(in_features=128, out_features=embedding_dim),
-            Linear(in_features=embedding_dim, out_features=tokens_n),
+            Linear(in_features=embedding_dim, out_features=tokens_n + 1),
             Softmax(dim=1)
         )
         

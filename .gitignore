@@ -2,3 +2,4 @@ test.*
 *.img
 *.mp3
 *.pt
+run_folder.*
