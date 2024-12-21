@@ -1,5 +1,7 @@
 test.*
 *.img
+*.png
+*.jpg
 *.mp3
 *.pt
-run_folder.*
+storage.*
