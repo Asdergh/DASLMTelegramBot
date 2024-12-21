@@ -40,20 +40,35 @@ class FCNSegmentationTrainer:
     
     def _save_samples(self, epoch):
         
-        generation_path = os.path.join(self.run_folder, "generated_samples")
-        if not os.path.exists(generation_path):
-            os.mkdir(generation_path)
-        epoch_samples = os.path.join(generation_path, f"Epoch_{epoch}_samples")
+        gen_path = os.path.join(self.run_folder, "generated_samples")
+        epoch_samples = os.path.join(gen_path , f"Epoch_{epoch}_samples")
+        paths = [
+            gen_path,
+            epoch_samples
+        ]
+        for path in paths:
+            if not os.path.exists(path):
+                os.mkdir(path)
         
         layers = [layer for (name, layer) in self.model.named_children() if "down" in name]
         out_heatmaps = {}
-        x, _ = next(iter(self.train_loader)).mean(dim=0)
+        x, _ = next(iter(self.train_loader))
+        x = x[th.randint(0, 32, size=(1, )), :, :, :]
         for i, layer in enumerate(layers):
-            out_heatmaps[i] = self.tf_resize(layer(x))
+            x = layer(x)
+            out_heatmaps[i] = self.tf_resize(x)
         
         for out in out_heatmaps.keys():
+            
+            heatmap = out_heatmaps[out]
+            idx = out_heatmaps[out].argsort(dim=1)
+            for i in range(heatmap.size()[2]):
+                for j in range(heatmap.size()[3]):
+                    heatmap[0, :, i, j] = heatmap[0, idx[0, :, i, j], i, j]
+            
+            heatmap = heatmap[:, :3, :, :]
             save_image(
-                tensor=out_heatmaps[out],
+                tensor=heatmap,
                 fp=os.path.join(epoch_samples, f"Layer_{out}_generated_heatmap.png")
             )
     
