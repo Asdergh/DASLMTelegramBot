@@ -4,4 +4,5 @@ test.*
 *.jpg
 *.mp3
 *.pt
+__pycache__.*
 storage.*

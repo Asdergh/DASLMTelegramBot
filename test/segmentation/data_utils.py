@@ -47,7 +47,7 @@ class SegmentationCOCOSet(Dataset):
             }
         
         self.images_size = images_size
-        self.x_scale, self.y_scale = self._get_scale_factor()
+        (self.x_scale, self.y_scale) = self._get_scale_factor()
 
     
     def _get_scale_factor(self) -> tuple[float]:
@@ -68,15 +68,15 @@ class SegmentationCOCOSet(Dataset):
             min_y = float(min(self.data["images"][0]["height"], self.images_size[1]))
         
         return  (
-            (max_x / min_x), 
-            (max_y, min_y)
+            (min_x / max_x), 
+            (min_y / max_y)
         )
 
     def _pts_to_mask(self, pts: np.ndarray) -> th.Tensor:
         
         pts = np.concatenate([
-            pts[0:pts.shape[0]:2],
-            pts[1:pts.shape[0]:2]
+            pts[0:pts.shape[0]:2] * self.x_scale,
+            pts[1:pts.shape[0]:2] * self.y_scale
         ], axis=1).astype(np.int32)
 
         if isinstance(self.images_size, tuple):
@@ -91,8 +91,9 @@ class SegmentationCOCOSet(Dataset):
         if isinstance(points, dict):
             
             masks = th.zeros((self.classes_n, ) + self.images_size)
-            for cat_id in points.keys():        
+            for cat_id in points.keys(): 
                 masks[cat_id] = self._pts_to_mask(points[cat_id])
+                
             return masks
 
         else:
@@ -131,6 +132,7 @@ class SegmentationCOCOSet(Dataset):
             image,
             segmentation_masks
         )
+
 
 
 
