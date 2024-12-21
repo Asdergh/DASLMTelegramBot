@@ -102,7 +102,7 @@ class FCNSegmentationTrainer:
             print(f"Epoch: [{epoch}], Loss: [{local_loss}]")
         
         save(
-            obj=self.model.stated_dict(),
+            obj=self.model.state_dict(),
             f=os.path.join(self.run_folder, "model_params.pt")
         )
         return {
