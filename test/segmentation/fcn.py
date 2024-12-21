@@ -93,5 +93,5 @@ if __name__ == "__main__":
     input = th.normal(0.12, 1.12, (10, 3, 128, 128))
     net = FCNet(in_channels=3, h_channels=32, classes_n=30)
     print(net(input).size())
-
+    
                 
