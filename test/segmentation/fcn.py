@@ -1,6 +1,7 @@
 import torch as th
 from torch.nn import (
     Conv2d,
+    Parameter,
     Upsample,
     MaxPool2d,
     Sigmoid,
@@ -10,12 +11,16 @@ from torch.nn import (
     Module,
     Sequential,
     BatchNorm2d,
-    Dropout
+    Dropout,
+    functional,
+    Tanh
 )
 from torch.utils.data import DataLoader
 
 
 
+
+        
 class ConvSS(Module):
 
     def __init__(
@@ -45,6 +50,7 @@ class ConvSS(Module):
             ),
             BatchNorm2d(num_features=out_channels),
             sampling,
+            Tanh()
         )
     
     def __call__(self, inputs: th.Tensor) -> th.Tensor:
@@ -70,19 +76,20 @@ class FCNet(Module):
         self.conv1_up = ConvSS(in_channels=32 * 2 , out_channels=64, sampling="up")
         self.conv2_up = ConvSS(in_channels=64 * 2, out_channels=128, sampling="up")
         self.conv3_up = ConvSS(in_channels=128 * 2, out_channels=classes_n, sampling="up")
-        self.out = Sigmoid()
+
+        self.out = Softmax(dim=1)
     
     def __call__(self, inputs: th.Tensor) -> th.Tensor:
 
-        d_conv0 = th.sin(self.conv0_down(inputs))
-        d_conv1 = th.sin(self.conv1_down(d_conv0))
-        d_conv2 = th.sin(self.conv2_down(d_conv1))
-        d_conv3 = th.sin(self.conv3_down(d_conv2))
+        d_conv0 = self.conv0_down(inputs)
+        d_conv1 = self.conv1_down(d_conv0)
+        d_conv2 = self.conv2_down(d_conv1)
+        d_conv3 = self.conv3_down(d_conv2)
 
-        u_conv0 = th.sin(self.conv0_up(d_conv3))
-        u_conv1 = th.sin(self.conv1_up(th.cat([u_conv0, d_conv2], dim=1)))
-        u_conv2 = th.sin(self.conv2_up(th.cat([u_conv1, d_conv1], dim=1)))
-        u_conv3 = th.sin(self.conv3_up(th.cat([u_conv2, d_conv0], dim=1)))
+        u_conv0 = self.conv0_up(d_conv3)
+        u_conv1 = self.conv1_up(th.cat([u_conv0, d_conv2], dim=1))
+        u_conv2 = self.conv2_up(th.cat([u_conv1, d_conv1], dim=1))
+        u_conv3 = self.conv3_up(th.cat([u_conv2, d_conv0], dim=1))
 
         return self.out(u_conv3)
 

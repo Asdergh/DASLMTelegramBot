@@ -1,10 +1,13 @@
 import torch as th
 import os
 import tqdm as tq
+import matplotlib.pyplot as plt
+import numpy as np
 
 from torch import save
 from torchvision.transforms.v2 import Resize
 from torchvision.utils import save_image
+from torchvision.transforms.functional import to_pil_image
 from torch.utils.data import (
     Dataset,
     DataLoader
@@ -15,7 +18,7 @@ from torch.nn import (
     BCELoss
 )
 from torch.optim import Adam
-
+plt.style.use("dark_background")
 
 class FCNSegmentationTrainer:
 
@@ -29,6 +32,9 @@ class FCNSegmentationTrainer:
     ) -> None:
         
         self.run_folder = run_folder
+        if not os.path.exists(self.run_folder):
+            os.mkdir(self.run_folder)
+
         self.tf_resize = Resize(size=train_set._images_size)
         self.model = model
         self.epochs = epochs
@@ -36,20 +42,58 @@ class FCNSegmentationTrainer:
         # self.train_loader = DataLoader(dataset=val_and_test, batch_size=batch_size)
 
         self.optim = Adam(params=self.model.parameters(), lr=0.01)
-        self.loss = MSELoss()
+        self.loss = BCELoss()
     
-    def _save_samples(self, epoch):
+
+    def _save_out_samples(
+            self, 
+            gen_path: str,
+            epoch: int
+    ) -> None:
+
+        masks_path = os.path.join(gen_path, f"MasksOn_{epoch}Epoch.png")
+        x, _ =  next(iter(self.train_loader))
+        x = x[th.randint(0, 32, (1, )), :, :, :]
         
-        gen_path = os.path.join(self.run_folder, "generated_samples")
-        epoch_samples = os.path.join(gen_path , f"Epoch_{epoch}_samples")
-        paths = [
-            gen_path,
-            epoch_samples
-        ]
-        for path in paths:
-            if not os.path.exists(path):
-                os.mkdir(path)
+        model_out = self.model(x)[0]
+        show_tensor = th.zeros((
+            7 * model_out.size()[1],
+            7 * model_out.size()[2]
+        ))
+
+        fig, axis = plt.subplots()
+        sample_n = 0
+        for i in range(7):
+            for j in range(7):
+                
+                try:
+                    show_tensor[
+                        i * model_out.size()[1]: 
+                        (i + 1) * model_out.size()[1],
+                        j * model_out.size()[2]: 
+                        (j + 1) * model_out.size()[2]
+                    ] = model_out[i, :, :]
+                
+                except BaseException:
+                    pass
+
+                sample_n += 1
+
+        axis.imshow(np.asarray(to_pil_image(show_tensor)), cmap="jet")
+        fig.savefig(masks_path)
+            
+
+    def _save_activations(
+        self, 
+        gen_path: str, 
+        epoch: int
+    ) -> None:
         
+        
+        epoch_samples = os.path.join(gen_path, f"Epoch_{epoch}_samples") 
+        if not os.path.exists(epoch_samples):
+            os.mkdir(epoch_samples)
+
         layers = [layer for (name, layer) in self.model.named_children() if "down" in name]
         out_heatmaps = {}
         x, _ = next(iter(self.train_loader))
@@ -74,7 +118,7 @@ class FCNSegmentationTrainer:
     
 
     def _train_on_epoch(self, epoch: int) -> float:
-
+        
         local_loss = 0.0
         for (image, seg_masks) in self.train_loader:
             
@@ -82,7 +126,7 @@ class FCNSegmentationTrainer:
             out = self.model(image)
             loss = 0.0
             for (mask_pred, mask_target) in zip(out, seg_masks):
-                loss += self.loss(mask_target, mask_pred)
+                loss += self.loss(mask_pred, mask_target)
             
             loss.backward()
             self.optim.step()
@@ -92,12 +136,17 @@ class FCNSegmentationTrainer:
 
     def train(self) -> dict[list]:
 
+        gen_path = os.path.join(self.run_folder, "generated_samples")
+        if not os.path.exists(gen_path):
+            os.mkdir(gen_path)
+
         loss = []
         for epoch in tq.tqdm(range(self.epochs), colour="green"):
             
             local_loss = self._train_on_epoch(epoch=epoch)
             loss.append(local_loss)
-            self._save_samples(epoch=epoch)
+            self._save_out_samples(epoch=epoch, gen_path=gen_path)
+            self._save_activations(epoch=epoch, gen_path=gen_path)
 
             print(f"Epoch: [{epoch}], Loss: [{local_loss}]")
         
